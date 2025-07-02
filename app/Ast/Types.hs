@@ -74,6 +74,10 @@ data Stmt ea ba
         index :: Exp ea,
         exp :: Exp ea
       }
+  | LetStringStmt
+      { id :: Id,
+        str :: String
+      }
   | ReturnStmt
       { retexp :: Maybe (Exp ea)
       }

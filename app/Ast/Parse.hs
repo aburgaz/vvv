@@ -40,8 +40,15 @@ elsekw = keyword "else"
 returnkw :: PC.Parser String
 returnkw = keyword "return"
 
+stringkw :: PC.Parser String
+stringkw = keyword "string"
+
 symbol :: String -> PC.Parser String
 symbol sym = lex (PC.string sym)
+
+string :: PC.Parser String
+-- TODO : Handle escaped quotes in strings
+string = symbol "\"" *> PC.many (PC.noneOf "\"") <* symbol "\""
 
 parens :: PC.Parser a -> PC.Parser a
 parens p = symbol "(" *> p <* symbol ")"
@@ -90,6 +97,7 @@ char = lex $ do
         , PC.char 'n' $> '\n'
         , PC.char 'r' $> '\r'
         , PC.char 't' $> '\t'
+        , PC.char '0' $> '\0'
         ]
 
 exp :: PC.Parser RawExp
@@ -185,6 +193,7 @@ stmt :: PC.Parser RawStmt
 stmt =
   PC.try letstmt
     <|> PC.try letarrstmt
+    <|> PC.try letstringstmt
     <|> PC.try retstmt
     <|> PC.try ifstmt
     <|> PC.try whilestmt
@@ -221,6 +230,14 @@ stmt =
       exp <- exp
       _ <- symbol ";"
       return $ AssignArrStmt {id, index, exp}
+
+    letstringstmt = do
+      _ <- stringkw
+      id <- id
+      _ <- symbol "="
+      str <- string 
+      _ <- symbol ";"
+      return $ LetStringStmt {id, str}
 
     retstmt = do
       _ <- returnkw
