@@ -70,17 +70,16 @@ executable minic
                     Mir 
                     Mir.Translate
                     Mir.Types
+                    Mir.Liveness
+                    Mir.Interference
+                    Mir.Allocation
                     X86
                     X86.Translate
                     X86.Types
                     TypeSystem
 
     -- LANGUAGE extensions used by modules in this package.
-    default-extensions: DuplicateRecordFields,
-                        OverloadedRecordDot,
-                        LambdaCase,
-                        NoFieldSelectors,
-                        DisambiguateRecordFields,
+    default-extensions: LambdaCase,
                         Strict
 
     -- Other library packages from which modules are imported.
@@ -88,6 +87,7 @@ executable minic
                         , containers >= 0.6
                         , parsec >= 3.1
                         , mtl >= 2.3
+                        , optparse-applicative >= 0.19
 
     -- Directories containing source files.
     hs-source-dirs:   app app/Mir app/Ast app/X86

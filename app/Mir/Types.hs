@@ -1,117 +1,122 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Mir.Types
-  ( Temp,
-    Label,
-    Var (..),
-    Operand (..),
-    Inst (..),
-    BasicBlock (..),
-    Fun (..),
-    Program (..),
-    ExternFun (..),
-  )
-where
+module Mir.Types where
 
+import Data.Set
 import Env qualified
 import TypeSystem
 
 type Temp = Int
 
-type Label = String
+type BlockId = String
 
-data Var
-  = Local {id :: Id}
-  | LocalWithOffset {id :: Id, offset :: Operand, mult :: Int}
-  | Arg {id :: Id}
-  deriving (Eq)
+data Register = R1 | R2 | R3 | R4 | R5 | R6 | R7 | R8
+  deriving (Eq, Ord, Show, Enum, Bounded)
 
-instance Show Var where
-  show (Local id) = "local " ++ id
-  show (Arg id) = "arg " ++ id
-  show (LocalWithOffset id offset 0) = "local " ++ id ++ "[" ++ show offset ++ "]"
-  show (LocalWithOffset id offset mult) =
-    "local " ++ id ++ "[" ++ show offset ++ " * " ++ show mult ++ "]"
+availableRegisters :: [Register]
+availableRegisters = [R1 .. R8]
 
 data Operand
   = ConstInt Int
   | ConstChar Char
   | Temp Temp
+  | RegOperand Register
+  | StackOperand Int
   deriving (Eq)
 
 instance Show Operand where
   show (ConstInt n) = "const " ++ show n
   show (ConstChar c) = "const " ++ show c
   show (Temp t) = "t" ++ show t
+  show (RegOperand r) = "reg " ++ show r
+  show (StackOperand n) = "stack " ++ show n
+
+data Terminator
+  = Return {retOperand :: Maybe Operand}
+  | Jump {jumpTarget :: BlockId}
+  | CondJump {condOperand :: Operand, condTrueBlockId :: BlockId, condFalseBlockId :: BlockId}
+  deriving (Eq)
+
+instance Show Terminator where
+  show (Return Nothing) = "return"
+  show (Return (Just operand)) = "return " ++ show operand
+  show (Jump target) = "goto " ++ target
+  show (CondJump cond trueBlockId falseBlockId) =
+    "if " ++ show cond ++ " goto " ++ trueBlockId ++ " else goto " ++ falseBlockId
 
 data Inst
-  = Mov {dst :: Temp, srcOp :: Operand}
-  | UnaryOp {dst :: Temp, unop :: UnaryOp, unsrc :: Operand}
-  | BinOp {dst :: Temp, binop :: BinOp, left :: Operand, right :: Operand}
-  | Load {dst :: Temp, srcVar :: Var}
-  | Store {dstVar :: Var, src :: Temp}
-  | Call {ret :: Maybe Temp, funId :: Id, argCount :: Int}
-  | Param {param :: Temp}
-  | Return {retVal :: Maybe Temp}
-  | Jump {target :: Label}
-  | CondJump {cond :: Temp, trueLabel :: Label, falseLabel :: Label}
+  = Assign {instDst :: Operand, instSrc :: Operand}
+  | UnaryOp {instDst :: Operand, instUnop :: UnaryOp, instSrc :: Operand}
+  | BinOp {instDst :: Operand, instBinop :: BinOp, instLeft :: Operand, instRight :: Operand}
+  | Call {callRet :: Maybe Operand, callFunId :: Id, callArgCount :: Int}
+  | Param {paramOperand :: Operand}
   deriving (Eq)
 
 instance Show Inst where
-  show Mov {dst, srcOp} = "t" ++ show dst ++ " = " ++ show srcOp
-  show UnaryOp {dst, unop, unsrc} = "t" ++ show dst ++ " = " ++ show unop ++ " t" ++ show unsrc
-  show BinOp {dst, binop, left, right} =
-    "t" ++ show dst ++ " = " ++ "t" ++ show left ++ " " ++ show binop ++ " " ++ "t" ++ show right
-  show Load {dst, srcVar} = "t" ++ show dst ++ " = " ++ show srcVar
-  show Store {dstVar, src} = show dstVar ++ " = t" ++ show src
-  show Call {ret = Just t, funId, argCount} = "t" ++ show t ++ " = call " ++ funId ++ ", " ++ show argCount
-  show Call {ret = Nothing, funId, argCount} = "call " ++ funId ++ ", " ++ show argCount
-  show Param {param} = "param " ++ "t" ++ show param
-  show Return {retVal = Just t} = "return " ++ "t" ++ show t
-  show Return {retVal = Nothing} = "return"
-  show Jump {target} = "goto " ++ target
-  show CondJump {cond, trueLabel, falseLabel} =
-    "if " ++ "t" ++ show cond ++ " then goto " ++ trueLabel ++ " else goto " ++ falseLabel
+  show Assign {instDst, instSrc} = show instDst ++ " = " ++ show instSrc
+  show UnaryOp {instDst, instUnop, instSrc} = show instDst ++ " = " ++ show instUnop ++ show instSrc
+  show BinOp {instDst, instBinop, instLeft, instRight} =
+    show instDst ++ " = " ++ show instLeft ++ " " ++ show instBinop ++ " " ++ show instRight
+  show Call {callRet = Just ret, callFunId, callArgCount} = show ret ++ " = call " ++ callFunId ++ ", " ++ show callArgCount
+  show Call {callRet = Nothing, callFunId, callArgCount} = "call " ++ callFunId ++ ", " ++ show callArgCount
+  show Param {paramOperand} = "param " ++ show paramOperand
 
--- A Basic Block is a sequence of instructions that starts with a label
+-- A Basic Block is a sequence of instructions that starts with a blockId
 -- and ends with a control flow instruction (Jump, CondJump, Return).
 -- For simplicity here, we'll just list instructions and assume the last one is control flow.
 -- A more rigorous CFG would explicitly link blocks.
 data BasicBlock = BasicBlock
-  { label :: Label,
-    insts :: [Inst]
+  { cfgBlockId :: BlockId,
+    blockInsts :: [Inst],
+    blockTerminator :: Terminator
   }
   deriving (Eq)
 
 instance Show BasicBlock where
-  show (BasicBlock label instructions) =
-    label ++ ":\n" ++ unlines (("  " ++) . show <$> instructions)
+  show (BasicBlock blockId insts terminator) =
+    blockId
+      ++ ":\n"
+      ++ unlines (("  " ++) . show <$> insts)
+      ++ "  "
+      ++ show terminator
+
+data CFG = CFG
+  { cfgEntryBlockId :: BlockId,
+    cfgExitBlocks :: Set BlockId,
+    cfgBlocks :: [BasicBlock]
+  }
+  deriving (Eq)
+
+instance Show CFG where
+  show (CFG entryBlockId exitBlocks blocks) =
+    "CFG:\n"
+      ++ "Entry Block: "
+      ++ entryBlockId
+      ++ "\n"
+      ++ "Exit Blocks: "
+      ++ unwords (show <$> toList exitBlocks)
+      ++ "\n"
+      ++ "Blocks:\n"
+      ++ unlines (show <$> blocks)
 
 data Fun = Fun
-  { id :: Id,
-    args :: [Env.Symbol],
-    locals :: [Env.Symbol],
-    entryLabel :: Label,
-    blocks :: [BasicBlock]
+  { funId :: Id,
+    funArgs :: [Env.Symbol],
+    funLocals :: [Env.Symbol],
+    funCfg :: CFG
   }
   deriving (Eq)
 
 instance Show Fun where
-  show (Fun name args locals entryLabel blocks) =
+  show (Fun id args locals cfg) =
     "Function: "
-      ++ name
-      ++ "\n"
-      ++ "Args: "
+      ++ id
+      ++ "\nArguments: "
       ++ unwords (show <$> args)
-      ++ "\n"
-      ++ "Locals: "
+      ++ "\nLocals: "
       ++ unwords (show <$> locals)
       ++ "\n"
-      ++ "Entry: "
-      ++ entryLabel
-      ++ "\n"
-      ++ "Blocks:\n"
-      ++ unlines (reverse $ show <$> blocks)
+      ++ show cfg
 
 newtype ExternFun = ExternFun
   { externId :: Id
@@ -122,9 +127,9 @@ instance Show ExternFun where
   show (ExternFun id) = "Extern Function: " ++ id
 
 data Program = Program
-  { funs :: [Fun],
-    externFuns :: [ExternFun],
-    mainFun :: Maybe Fun
+  { programFuns :: [Fun],
+    programExternFuns :: [ExternFun],
+    programMainFun :: Maybe Fun
   }
   deriving (Eq)
 
