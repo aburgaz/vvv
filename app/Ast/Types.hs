@@ -75,8 +75,8 @@ data Stmt ea ba
         assignArrExp :: Exp ea
       }
   | LetStringStmt
-      { id :: Id,
-        str :: String
+      { stringId :: Id,
+        stringValue :: String
       }
   | ReturnStmt
       { returnExp :: Maybe (Exp ea)

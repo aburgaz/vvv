@@ -232,11 +232,11 @@ stmt =
 
     letstringstmt = do
       _ <- stringkw
-      id <- id
+      stringId <- id
       _ <- symbol "="
-      str <- string 
+      stringValue <- string 
       _ <- symbol ";"
-      return $ LetStringStmt {id, str}
+      return $ LetStringStmt {stringId, stringValue}
 
     retstmt = do
       _ <- returnkw
